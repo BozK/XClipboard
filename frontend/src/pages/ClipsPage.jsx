@@ -50,19 +50,6 @@ export function ClipsPage({ onLogout }) {
     }
   };
 
-  const handleCopyToClipboard = async () => {
-    if (!text.trim()) return;
-
-    try {
-      await navigator.clipboard.writeText(text);
-      // Visual feedback
-      setCopiedId("textarea");
-      setTimeout(() => setCopiedId(null), 2000);
-    } catch (err) {
-      setError("Failed to copy to clipboard");
-    }
-  };
-
   const handleCopyClip = async (clipText, clipId) => {
     try {
       await navigator.clipboard.writeText(clipText);
@@ -115,16 +102,7 @@ export function ClipsPage({ onLogout }) {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-2 flex-col sm:flex-row">
-            <button
-              onClick={handleCopyToClipboard}
-              disabled={!text.trim()}
-              className={`btn-secondary flex-1 disabled:opacity-50 disabled:cursor-not-allowed ${
-                copiedId === "textarea" ? "bg-xc-brown text-xc-fill" : ""
-              }`}
-            >
-              {copiedId === "textarea" ? "✓ Copied!" : "Copy to Clipboard"}
-            </button>
+          <div className="flex flex-col sm:flex-row">
             <button
               onClick={handleSaveClip}
               disabled={!text.trim() || isSaving}
