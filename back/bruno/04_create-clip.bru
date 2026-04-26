@@ -1,0 +1,21 @@
+meta {
+  name: Create Clip
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/clip
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "clip_text": "This is my first clip!"
+  }
+}

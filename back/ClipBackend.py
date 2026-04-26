@@ -5,9 +5,11 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 import bcrypt
 from fastapi import FastAPI, Request, Response, HTTPException, Depends, status, Cookie
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import time
 from dotenv import load_dotenv
+from pathlib import Path
 
 from ClipModels import (
     LoginRequest, RegisterRequest, ClipCreate,
@@ -18,15 +20,14 @@ from logger import logger
 
 # Load environment variables
 load_dotenv()
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "dev_admin_token_change_in_production")
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
 # ============================================================================
 # Session Management (In-Memory)
 # ============================================================================
 sessions = {}  # Format: {session_id_uuid: "username"}
 
-DATABASE_PATH = "../xclipboard.db"
-
+DB_PATH = Path(__file__).parent.parent / "db" / "xclipboard.db"
 
 # ============================================================================
 # Database Helpers
@@ -34,7 +35,7 @@ DATABASE_PATH = "../xclipboard.db"
 
 def get_db_connection():
     """Create and return a database connection"""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -318,8 +319,11 @@ async def create_clip(request: ClipCreate, current_user: str = Depends(get_curre
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     """Custom HTTP exception handler"""
-    logger.error(f"HTTP Exception: {exc.status_code} - {exc.detail}")
-    return ErrorResponse(error=exc.detail)
+    logger.warning(f"HTTP {exc.status_code}: {exc.detail}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.detail}
+    )
 
 
 # ============================================================================
