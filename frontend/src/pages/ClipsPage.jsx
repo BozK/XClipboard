@@ -8,6 +8,7 @@ export function ClipsPage({ onLogout }) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
     fetchClips();
@@ -69,6 +70,23 @@ export function ClipsPage({ onLogout }) {
     }
   };
 
+  const handleDeleteClip = async (clipId) => {
+    setDeletingId(clipId);
+    try {
+      await apiClient.deleteClip(clipId);
+      await fetchClips();
+      setError("");
+    } catch (err) {
+      if (err.message === "Unauthorized") {
+        onLogout();
+      } else {
+        setError("Failed to delete clip");
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
     return date.toLocaleString();
@@ -92,21 +110,21 @@ export function ClipsPage({ onLogout }) {
       <main className="flex-1 flex flex-col md:flex-row gap-4 p-4 max-w-6xl mx-auto w-full">
         {/* Textarea Section */}
         <div className="flex-1 flex flex-col gap-4">
-          <div className="flex-1 container-box flex flex-col">
+          <div className="md:h-[480px] flex-1 md:flex-none container-box flex flex-col">
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Paste or type your text here..."
-              className="flex-1 resize-none focus:outline-none bg-xc-fill text-xc-brown placeholder-xc-brown placeholder-opacity-60"
+              className="flex-1 md:h-[480px] resize-none focus:outline-none bg-xc-fill text-xc-brown placeholder-xc-brown placeholder-opacity-60"
             />
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row">
+          <div className="flex flex-col sm:flex-row justify-center">
             <button
               onClick={handleSaveClip}
               disabled={!text.trim() || isSaving}
-              className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-primary flex-1 sm:flex-1 md:flex-none md:w-1/3 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSaving ? "Saving..." : "Save Clip"}
             </button>
@@ -121,7 +139,7 @@ export function ClipsPage({ onLogout }) {
 
         {/* Clips Drawer */}
         <div className="md:w-80 flex flex-col">
-          <div className="container-box flex-1 flex flex-col overflow-hidden">
+          <div className="container-box flex-1 md:max-h-[600px] flex flex-col overflow-hidden">
             <h2 className="font-bold text-lg text-xc-brown mb-3">
               Recent Clips
             </h2>
@@ -140,18 +158,27 @@ export function ClipsPage({ onLogout }) {
                       <span className="text-xs text-xc-brown opacity-70">
                         {formatTime(clip.created_at)}
                       </span>
-                      <button
-                        onClick={() =>
-                          handleCopyClip(clip.clip_text, clip.clip_id)
-                        }
-                        className={`text-xs px-2 py-1 rounded transition-colors ${
-                          copiedId === clip.clip_id
-                            ? "bg-xc-brown text-xc-fill"
-                            : "bg-xc-brown text-xc-fill hover:opacity-80"
-                        }`}
-                      >
-                        {copiedId === clip.clip_id ? "✓" : "Copy"}
-                      </button>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() =>
+                            handleCopyClip(clip.clip_text, clip.clip_id)
+                          }
+                          className={`text-xs px-2 py-1 rounded transition-colors ${
+                            copiedId === clip.clip_id
+                              ? "bg-xc-brown text-xc-fill"
+                              : "bg-xc-brown text-xc-fill hover:opacity-80"
+                          }`}
+                        >
+                          {copiedId === clip.clip_id ? "✓" : "Copy"}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClip(clip.clip_id)}
+                          disabled={deletingId === clip.clip_id}
+                          className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:opacity-80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {deletingId === clip.clip_id ? "..." : "Delete"}
+                        </button>
+                      </div>
                     </div>
                     <p className="text-sm text-xc-brown break-words">
                       {truncateText(clip.clip_text)}

@@ -322,6 +322,48 @@ async def create_clip(request: ClipCreate, current_user: str = Depends(get_curre
     )
 
 
+@app.delete("/clip/{clip_id}", response_model=MessageResponse, status_code=status.HTTP_200_OK)
+async def delete_clip(clip_id: int, current_user: str = Depends(get_current_user)):
+    """
+    DELETE /clip/{clip_id}
+    Delete a specific clip belonging to the authenticated user
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Verify the clip belongs to the current user
+        cursor.execute(
+            "SELECT username FROM CLIPS WHERE clip_id = ?",
+            (clip_id,)
+        )
+        clip = cursor.fetchone()
+        
+        if not clip:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Clip not found"
+            )
+        
+        if clip["username"] != current_user:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot delete clip belonging to another user"
+            )
+        
+        # Delete the clip
+        cursor.execute(
+            "DELETE FROM CLIPS WHERE clip_id = ?",
+            (clip_id,)
+        )
+        conn.commit()
+        logger.info(f"Clip deleted for user {current_user}: clip_id={clip_id}")
+    finally:
+        conn.close()
+    
+    return MessageResponse(message="Clip deleted successfully")
+
+
 # ============================================================================
 # Error Handlers
 # ============================================================================

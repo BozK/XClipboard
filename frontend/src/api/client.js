@@ -129,4 +129,39 @@ export const apiClient = {
       throw err;
     }
   },
+
+  async deleteClip(clipId) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/clip/${clipId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error("Unauthorized");
+        }
+        if (response.status === 404) {
+          throw new Error("Clip not found");
+        }
+        let errorMessage = "Failed to delete clip";
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.detail || errorMessage;
+        } catch (e) {
+          // Response wasn't valid JSON, use fallback message
+        }
+        throw new Error(errorMessage);
+      }
+      try {
+        return await response.json();
+      } catch (e) {
+        throw new Error("Failed to delete clip - invalid server response");
+      }
+    } catch (err) {
+      if (err instanceof TypeError) {
+        throw new Error("Failed to delete clip - unable to connect");
+      }
+      throw err;
+    }
+  },
 };
