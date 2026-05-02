@@ -1,9 +1,7 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
-
 export const apiClient = {
   async login(username, password) {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      const response = await fetch(`/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -37,7 +35,7 @@ export const apiClient = {
 
   async logout() {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/logout`, {
+      const response = await fetch(`/auth/logout`, {
         method: "POST",
         credentials: "include",
       });
@@ -66,7 +64,7 @@ export const apiClient = {
 
   async getClips() {
     try {
-      const response = await fetch(`${API_BASE_URL}/clips`, {
+      const response = await fetch(`/clips`, {
         method: "GET",
         credentials: "include",
       });
@@ -98,7 +96,7 @@ export const apiClient = {
 
   async createClip(text) {
     try {
-      const response = await fetch(`${API_BASE_URL}/clip`, {
+      const response = await fetch(`/clip`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -132,7 +130,7 @@ export const apiClient = {
 
   async deleteClip(clipId) {
     try {
-      const response = await fetch(`${API_BASE_URL}/clip/${clipId}`, {
+      const response = await fetch(`/clip/${clipId}`, {
         method: "DELETE",
         credentials: "include",
       });
