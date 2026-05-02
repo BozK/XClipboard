@@ -7,7 +7,6 @@ import bcrypt
 from fastapi import FastAPI, APIRouter, Request, Response, HTTPException, Depends, status, Cookie
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 import time
 from pathlib import Path
 
@@ -16,7 +15,8 @@ from ClipModels import (
     MessageResponse, UserMessageResponse, ClipMessageResponse,
     ClipsResponse, ClipResponse, ErrorResponse
 )
-from logger import logger
+from middleware import LoggingMiddleware
+from logger import logger, log_request, log_database_query
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
@@ -26,8 +26,6 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 sessions = {}  # Format: {session_id_uuid: "username"}
 
 DB_PATH = Path(__file__).parent.parent / "db" / "xclipboard.db"
-print(DB_PATH.absolute())
-print(DB_PATH.exists())
 
 # ============================================================================
 # Database Helpers
@@ -35,8 +33,6 @@ print(DB_PATH.exists())
 
 def get_db_connection():
     """Create and return a database connection"""
-    logger.info(f"Attempting to connect to: {DB_PATH.absolute()}")
-    logger.info(f"DB file exists: {DB_PATH.exists()}")
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -46,7 +42,9 @@ def get_user_by_username(username: str) -> Optional[sqlite3.Row]:
     """Fetch user from database by username"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM Users WHERE username = ?", (username,))
+    query = "SELECT * FROM Users WHERE username = ?"
+    cursor.execute(query, (username,))
+    log_database_query(logger, query, (username,))
     user = cursor.fetchone()
     conn.close()
     return user
@@ -58,42 +56,8 @@ def get_user_by_username(username: str) -> Optional[sqlite3.Row]:
 
 app = FastAPI(title="XClipboard API", version="1.0.0")
 
-
-# Enable CORS for frontend (different port during development)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite dev server
-        "http://localhost:3000",  # Alternative dev port
-        "http://127.0.0.1:5173",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# # Create API router with /api prefix
-# api_router = APIRouter(prefix="/api")
-
-# ============================================================================
-# Logging Middleware
-# ============================================================================
-
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    """Log all incoming requests with method, path, status, and response time"""
-    start_time = time.time()
-    
-    response = await call_next(request)
-    
-    process_time = time.time() - start_time
-    logger.info(
-        f"{request.method} {request.url.path} - "
-        f"Status: {response.status_code} - "
-        f"Response Time: {process_time:.3f}s"
-    )
-    
-    return response
+# Add logging middleware
+app.add_middleware(LoggingMiddleware, logger=logger)
 
 
 # ============================================================================
@@ -240,14 +204,12 @@ async def register(request: RegisterRequest, _: bool = Depends(validate_admin_to
     cursor = conn.cursor()
     
     try:
-        cursor.execute(
-            "INSERT INTO Users (username, password_hash) VALUES (?, ?)",
-            (request.username, password_hash)
-        )
+        query = "INSERT INTO Users (username, password_hash) VALUES (?, ?)"
+        cursor.execute(query, (request.username, password_hash))
+        log_database_query(logger, query, (request.username, "<hash>"))
         conn.commit()
-        logger.info(f"New user registered: {request.username}")
     except sqlite3.IntegrityError:
-        logger.warning(f"Failed to register user (integrity error): {request.username}")
+        logger.warning(f"Registration failed (user exists): {request.username}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already exists"
@@ -269,16 +231,15 @@ async def get_clips(current_user: str = Depends(get_current_user)):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute(
-        """
+    query = """
         SELECT clip_id, clip_text, created_at
         FROM CLIPS
         WHERE username = ?
         ORDER BY created_at DESC
         LIMIT 25
-        """,
-        (current_user,)
-    )
+        """
+    cursor.execute(query, (current_user,))
+    log_database_query(logger, query, (current_user,))
     
     rows = cursor.fetchall()
     conn.close()
@@ -288,7 +249,6 @@ async def get_clips(current_user: str = Depends(get_current_user)):
         for row in rows
     ]
     
-    logger.info(f"Retrieved {len(clips)} clips for user: {current_user}")
     return ClipsResponse(clips=clips)
 
 
@@ -310,13 +270,11 @@ async def create_clip(request: ClipCreate, current_user: str = Depends(get_curre
     cursor = conn.cursor()
     
     try:
-        cursor.execute(
-            "INSERT INTO CLIPS (username, clip_text, created_at) VALUES (?, ?, ?)",
-            (current_user, request.clip_text, created_at)
-        )
+        query = "INSERT INTO CLIPS (username, clip_text, created_at) VALUES (?, ?, ?)"
+        cursor.execute(query, (current_user, request.clip_text, created_at))
+        log_database_query(logger, query, (current_user, "<clip_text>", created_at))
         conn.commit()
         clip_id = cursor.lastrowid
-        logger.info(f"Clip saved for user {current_user}: clip_id={clip_id}")
     finally:
         conn.close()
     
@@ -338,10 +296,9 @@ async def delete_clip(clip_id: int, current_user: str = Depends(get_current_user
     
     try:
         # Verify the clip belongs to the current user
-        cursor.execute(
-            "SELECT username FROM CLIPS WHERE clip_id = ?",
-            (clip_id,)
-        )
+        select_query = "SELECT username FROM CLIPS WHERE clip_id = ?"
+        cursor.execute(select_query, (clip_id,))
+        log_database_query(logger, select_query, (clip_id,))
         clip = cursor.fetchone()
         
         if not clip:
@@ -357,12 +314,10 @@ async def delete_clip(clip_id: int, current_user: str = Depends(get_current_user
             )
         
         # Delete the clip
-        cursor.execute(
-            "DELETE FROM CLIPS WHERE clip_id = ?",
-            (clip_id,)
-        )
+        delete_query = "DELETE FROM CLIPS WHERE clip_id = ?"
+        cursor.execute(delete_query, (clip_id,))
+        log_database_query(logger, delete_query, (clip_id,))
         conn.commit()
-        logger.info(f"Clip deleted for user {current_user}: clip_id={clip_id}")
     finally:
         conn.close()
     
