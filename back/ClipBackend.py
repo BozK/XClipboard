@@ -15,7 +15,6 @@ from ClipModels import (
     MessageResponse, UserMessageResponse, ClipMessageResponse,
     ClipsResponse, ClipResponse, ErrorResponse
 )
-from middleware import LoggingMiddleware
 from logger import logger, log_request, log_database_query
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
@@ -56,8 +55,21 @@ def get_user_by_username(username: str) -> Optional[sqlite3.Row]:
 
 app = FastAPI(title="XClipboard API", version="1.0.0")
 
-# Add logging middleware
-app.add_middleware(LoggingMiddleware, logger=logger)
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """inline logging middleware"""
+    start_time = time.time()
+    response = await call_next(request)
+    process_time_ms = (time.time() - start_time) * 1000
+    log_request(
+        logger,
+        method=request.method,
+        path=request.url.path,
+        client_ip=request.client.host if request.client else "unknown",
+        status_code=response.status_code,
+        response_time_ms=process_time_ms
+    )
+    return response
 
 
 # ============================================================================
@@ -368,8 +380,7 @@ if __name__ == "__main__":
     logger.info("Starting XClipboard API server...")
     uvicorn.run(
         app,
-        # host="127.0.0.1",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8001,
         log_config=None  # Use our custom logging
     )

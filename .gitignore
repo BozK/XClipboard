@@ -50,3 +50,10 @@ build/
 .env
 .env.local
 .env.*.local
+
+#logs
+logs/
+
+#cache stuff?
+back/__pycache__/
+*.pyc
