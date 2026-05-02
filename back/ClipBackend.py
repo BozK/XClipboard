@@ -4,11 +4,11 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 import bcrypt
-from fastapi import FastAPI, Request, Response, HTTPException, Depends, status, Cookie
+from fastapi import FastAPI, APIRouter, Request, Response, HTTPException, Depends, status, Cookie
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import time
-from dotenv import load_dotenv
 from pathlib import Path
 
 from ClipModels import (
@@ -18,8 +18,6 @@ from ClipModels import (
 )
 from logger import logger
 
-# Load environment variables
-load_dotenv()
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
 # ============================================================================
@@ -28,6 +26,8 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 sessions = {}  # Format: {session_id_uuid: "username"}
 
 DB_PATH = Path(__file__).parent.parent / "db" / "xclipboard.db"
+print(DB_PATH.absolute())
+print(DB_PATH.exists())
 
 # ============================================================================
 # Database Helpers
@@ -35,6 +35,8 @@ DB_PATH = Path(__file__).parent.parent / "db" / "xclipboard.db"
 
 def get_db_connection():
     """Create and return a database connection"""
+    logger.info(f"Attempting to connect to: {DB_PATH.absolute()}")
+    logger.info(f"DB file exists: {DB_PATH.exists()}")
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -56,6 +58,7 @@ def get_user_by_username(username: str) -> Optional[sqlite3.Row]:
 
 app = FastAPI(title="XClipboard API", version="1.0.0")
 
+
 # Enable CORS for frontend (different port during development)
 app.add_middleware(
     CORSMiddleware,
@@ -69,6 +72,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# # Create API router with /api prefix
+# api_router = APIRouter(prefix="/api")
 
 # ============================================================================
 # Logging Middleware
@@ -387,28 +392,29 @@ async def health_check():
     """Simple health check endpoint"""
     return {"status": "ok"}
 
-
-# ============================================================================
-# Root Endpoint
-# ============================================================================
-
-@app.get("/", status_code=status.HTTP_200_OK)
-async def root():
-    """Root endpoint"""
-    return {"message": "XClipboard API v1.0.0"}
-
-
 # ============================================================================
 # Run Server
 # ============================================================================
 
 if __name__ == "__main__":
     import uvicorn
+    # # Register API router with /api prefix
+    # app.include_router(api_router)
+
+    # Serve React frontend static files at /
+    # Resolve frontend/dist path (works from back/ or root directory)
+    frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+    
+    if frontend_dist.exists():
+        app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="static")
+    else:
+        logger.warning(f"Frontend dist not found at: {frontend_dist}")
     
     logger.info("Starting XClipboard API server...")
     uvicorn.run(
         app,
-        host="127.0.0.1",
+        # host="127.0.0.1",
+        host="0.0.0.0",
         port=8001,
         log_config=None  # Use our custom logging
     )
