@@ -101,7 +101,7 @@ export function ClipsPage({ username, onLogout }) {
     <div className="min-h-screen bg-xc-bg flex flex-col">
       {/* Header */}
       <header className="bg-xc-fill border-b-2 border-xc-brown p-4 flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-xc-brown">
+        <h1 className="text-xl md:text-2xl font-bold text-xc-brown">
           XClipboard{username && ` - ${username}`}
         </h1>
         <button onClick={handleLogout} className="btn-secondary">
