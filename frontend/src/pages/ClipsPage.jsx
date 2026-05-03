@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiClient } from "../api/client";
+import { ClipContent } from "../components/ClipContent";
 
 export function ClipsPage({ onLogout }) {
   const [text, setText] = useState("");
@@ -181,7 +182,7 @@ export function ClipsPage({ onLogout }) {
                       </div>
                     </div>
                     <p className="text-sm text-xc-brown break-words">
-                      {truncateText(clip.clip_text)}
+                      <ClipContent text={clip.clip_text} />
                     </p>
                   </div>
                 ))

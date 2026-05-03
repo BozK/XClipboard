@@ -108,8 +108,40 @@ XClipboard is a self-hosted web application for sharing text snippets across dev
 - Clipboard history UI improvements (search, filters, delete individual clips)
 - Device naming/identification (track which device saved each clip)
 - Read-only mode for shared/guest access
-- File/image support (not just text)
 - Refresh token implementation for extended sessions
 - User signup/registration page (invite-based or open)
 - Analytics (most-copied clips, usage patterns)
 - Keyboard shortcuts (e.g., Escape to clear textarea, Ctrl+S to save)
+- Link detection in text clips (auto-linkify URLs starting with `http`, clickable in clips drawer)
+
+### File/image storage
+
+**Backend Changes:**
+
+- **Database schema**: Add `CLIPS_FILES` table or extend `CLIPS` to support `content_type` (text/image/pdf/etc) and `file_path`/blob storage
+- **File storage strategy**:
+  - SQLite BLOB: Simple, all data in one file, but bloats database (suitable for MVP)
+  - Filesystem storage: Store files on disk with references in DB (more scalable, requires disk management)
+  - S3/external storage: Best for production, requires external service setup
+- **Upload endpoint**: `POST /clips/file` handling multipart form data with MIME type validation and file size limits (e.g., 10MB)
+- **Download endpoint**: `GET /clips/{id}/file` serving files with proper MIME types and authentication
+- **Security considerations**: MIME type validation, file size limits, access control per clip, virus scanning (optional)
+
+**Frontend Changes:**
+
+- **File input UI**: File chooser or drag-drop zone in main upload section
+- **Upload handling**: Multipart form submissions with progress tracking
+- **Display logic**: Differentiate rendering based on clip type
+  - Text: current behavior
+  - Images: thumbnail/preview in drawer, expandable modal view
+  - PDFs/documents: icon, filename, download button
+  - Other files: icon, name, download button
+- **Type handling**: Different rendering strategies for each file type
+
+**Data Model Implications:**
+
+- **Backward compatibility**: Existing text clips continue to work, clips become polymorphic (text OR file)
+- **Query changes**: `POST /clips` becomes flexible for text or file upload
+- **Response model**: `ClipResponse` needs `type` field and optional `file_url`/`file_name`
+
+**Complexity estimate**: 8-16 hours depending on storage backend choice and supported file types
