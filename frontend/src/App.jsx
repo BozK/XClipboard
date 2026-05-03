@@ -6,6 +6,7 @@ import { apiClient } from "./api/client";
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+  const [username, setUsername] = useState(null);
 
   useEffect(() => {
     // Check if user has a valid session on app mount
@@ -25,11 +26,13 @@ function App() {
     }
   };
 
-  const handleLoginSuccess = () => {
+  const handleLoginSuccess = (loginUsername) => {
+    setUsername(loginUsername);
     setIsAuthenticated(true);
   };
 
   const handleLogout = () => {
+    setUsername(null);
     setIsAuthenticated(false);
   };
 
@@ -42,7 +45,7 @@ function App() {
   }
 
   return isAuthenticated ? (
-    <ClipsPage onLogout={handleLogout} />
+    <ClipsPage username={username} onLogout={handleLogout} />
   ) : (
     <LoginPage onLoginSuccess={handleLoginSuccess} />
   );

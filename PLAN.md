@@ -145,3 +145,36 @@ XClipboard is a self-hosted web application for sharing text snippets across dev
 - **Response model**: `ClipResponse` needs `type` field and optional `file_url`/`file_name`
 
 **Complexity estimate**: 8-16 hours depending on storage backend choice and supported file types
+
+### Public clips page
+
+**Use case**: Share specific text clips with friends or across devices without requiring them to log in.
+
+**Approach: Per-clip share tokens** (recommended)
+
+**Backend Changes:**
+
+- **Database schema**: Add `is_public (bool)` and `share_token (uuid, nullable, unique)` columns to CLIPS table
+- **New endpoint**: `GET /public/clip/{share_token}` (no authentication required) returns read-only `ClipResponse`
+- **Update clip endpoints**: Allow authenticated users to toggle `is_public` flag and generate/revoke share tokens
+  - `POST /clip/{clip_id}/share` - generate token and make public
+  - `DELETE /clip/{clip_id}/share` - revoke token and make private
+- **Security**: Share tokens should be high-entropy UUIDs, different from clip IDs
+
+**Frontend Changes:**
+
+- **Share button per clip**: Toggle button to generate/copy/revoke share link
+- **Share link format**: `xclipboard.yourdomain.com/public/{share_token}` (short, memorable)
+- **Public view route**: Detect `/public/:token` and render read-only clip display
+  - Show clip text with ClipContent rendering (links clickable)
+  - "Copy to Clipboard" button functional
+  - No delete or edit controls
+  - Can show timestamp
+
+**Data Model Implications:**
+
+- Clips table fields: `is_public`, `share_token` (nullable)
+- New response model: `PublicClipResponse` (read-only variant)
+- Backward compatibility: Existing clips default to `is_public=false`
+
+**Complexity estimate**: 4-6 hours (moderate - mostly CRUD operations and routing)

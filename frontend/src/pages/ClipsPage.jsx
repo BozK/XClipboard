@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { apiClient } from "../api/client";
 import { ClipContent } from "../components/ClipContent";
 
-export function ClipsPage({ onLogout }) {
+export function ClipsPage({ username, onLogout }) {
   const [text, setText] = useState("");
   const [clips, setClips] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -101,7 +101,9 @@ export function ClipsPage({ onLogout }) {
     <div className="min-h-screen bg-xc-bg flex flex-col">
       {/* Header */}
       <header className="bg-xc-fill border-b-2 border-xc-brown p-4 flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-xc-brown">XClipboard</h1>
+        <h1 className="text-2xl font-bold text-xc-brown">
+          XClipboard{username && ` - ${username}`}
+        </h1>
         <button onClick={handleLogout} className="btn-secondary">
           Logout
         </button>
