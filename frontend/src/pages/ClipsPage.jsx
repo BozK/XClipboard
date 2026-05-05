@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import { apiClient } from "../api/client";
 import { ClipContent } from "../components/ClipContent";
 
-export function ClipsPage({ username, onLogout }) {
+export function ClipsPage({ onLogout }) {
   const [text, setText] = useState("");
   const [clips, setClips] = useState([]);
+  const [username, setUsername] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
@@ -12,8 +13,20 @@ export function ClipsPage({ username, onLogout }) {
   const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
+    fetchUsername();
     fetchClips();
   }, []);
+
+  const fetchUsername = async () => {
+    try {
+      const data = await apiClient.getMe();
+      setUsername(data.username);
+    } catch (err) {
+      if (err.message === "Unauthorized") {
+        onLogout();
+      }
+    }
+  };
 
   const fetchClips = async () => {
     setIsLoading(true);

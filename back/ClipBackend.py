@@ -117,15 +117,21 @@ def verify_password(password: str, hashed: bytes) -> bool:
 
 
 # ============================================================================
+# API Router
+# ============================================================================
+
+api_router = APIRouter(prefix="/api")
+
+# ============================================================================
 # API Endpoints
 # ============================================================================
 
 # -------- Authentication --------
 
-@app.post("/auth/login", response_model=UserMessageResponse, status_code=status.HTTP_201_CREATED)
-async def login(request: LoginRequest, response: Response):
+@api_router.post("/auth/login", response_model=UserMessageResponse, status_code=status.HTTP_201_CREATED)
+def login(request: LoginRequest, response: Response):
     """
-    POST /auth/login
+    POST /api/auth/login
     Authenticate user and create session
     """
     user = get_user_by_username(request.username)
@@ -171,10 +177,10 @@ async def login(request: LoginRequest, response: Response):
     return UserMessageResponse(message="Login successful", username=request.username)
 
 
-@app.post("/auth/logout", response_model=MessageResponse, status_code=status.HTTP_200_OK)
-async def logout(response: Response, current_user: str = Depends(get_current_user)):
+@api_router.post("/auth/logout", response_model=MessageResponse, status_code=status.HTTP_200_OK)
+def logout(response: Response, current_user: str = Depends(get_current_user)):
     """
-    POST /auth/logout
+    POST /api/auth/logout
     Invalidate session
     """
     # Find and remove session
@@ -194,10 +200,10 @@ async def logout(response: Response, current_user: str = Depends(get_current_use
     return MessageResponse(message="Logged out successfully")
 
 
-@app.post("/auth/register", response_model=UserMessageResponse, status_code=status.HTTP_201_CREATED)
-async def register(request: RegisterRequest, _: bool = Depends(validate_admin_token)):
+@api_router.post("/admin/register", response_model=UserMessageResponse, status_code=status.HTTP_201_CREATED)
+def register(request: RegisterRequest, _: bool = Depends(validate_admin_token)):
     """
-    POST /auth/register
+    POST /api/admin/register
     Add a new user to the system (Admin only)
     """
     # Check if user already exists
@@ -234,10 +240,19 @@ async def register(request: RegisterRequest, _: bool = Depends(validate_admin_to
 
 # -------- Clips --------
 
-@app.get("/clips", response_model=ClipsResponse, status_code=status.HTTP_200_OK)
-async def get_clips(current_user: str = Depends(get_current_user)):
+@api_router.get("/me", status_code=status.HTTP_200_OK)
+def get_current_user_info(current_user: str = Depends(get_current_user)):
     """
-    GET /clips
+    GET /api/me
+    Return the username of the currently authenticated user
+    """
+    return {"username": current_user}
+
+
+@api_router.get("/clips", response_model=ClipsResponse, status_code=status.HTTP_200_OK)
+def get_clips(current_user: str = Depends(get_current_user)):
+    """
+    GET /api/clips
     Fetch user's 25 most recent clips (newest first)
     """
     conn = get_db_connection()
@@ -264,10 +279,10 @@ async def get_clips(current_user: str = Depends(get_current_user)):
     return ClipsResponse(clips=clips)
 
 
-@app.post("/clip", response_model=ClipMessageResponse, status_code=status.HTTP_201_CREATED)
-async def create_clip(request: ClipCreate, current_user: str = Depends(get_current_user)):
+@api_router.post("/clip", response_model=ClipMessageResponse, status_code=status.HTTP_201_CREATED)
+def create_clip(request: ClipCreate, current_user: str = Depends(get_current_user)):
     """
-    POST /clip
+    POST /api/clip
     Save a single clip for the authenticated user
     """
     if not request.clip_text or request.clip_text.strip() == "":
@@ -297,10 +312,10 @@ async def create_clip(request: ClipCreate, current_user: str = Depends(get_curre
     )
 
 
-@app.delete("/clip/{clip_id}", response_model=MessageResponse, status_code=status.HTTP_200_OK)
-async def delete_clip(clip_id: int, current_user: str = Depends(get_current_user)):
+@api_router.delete("/clip/{clip_id}", response_model=MessageResponse, status_code=status.HTTP_200_OK)
+def delete_clip(clip_id: int, current_user: str = Depends(get_current_user)):
     """
-    DELETE /clip/{clip_id}
+    DELETE /api/clip/{clip_id}
     Delete a specific clip belonging to the authenticated user
     """
     conn = get_db_connection()
@@ -365,8 +380,9 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    # # Register API router with /api prefix
-    # app.include_router(api_router)
+    
+    # Register API router with /api prefix
+    app.include_router(api_router)
 
     # Serve React frontend static files at /
     # Resolve frontend/dist path (works from back/ or root directory)

@@ -1,7 +1,7 @@
 export const apiClient = {
   async login(username, password) {
     try {
-      const response = await fetch(`/auth/login`, {
+      const response = await fetch(`/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -35,7 +35,7 @@ export const apiClient = {
 
   async logout() {
     try {
-      const response = await fetch(`/auth/logout`, {
+      const response = await fetch(`/api/auth/logout`, {
         method: "POST",
         credentials: "include",
       });
@@ -62,9 +62,41 @@ export const apiClient = {
     }
   },
 
+  async getMe() {
+    try {
+      const response = await fetch(`/api/me`, {
+        method: "GET",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error("Unauthorized");
+        }
+        let errorMessage = "Failed to fetch user info";
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.detail || errorMessage;
+        } catch (e) {
+          // Response wasn't valid JSON, use fallback message
+        }
+        throw new Error(errorMessage);
+      }
+      try {
+        return await response.json();
+      } catch (e) {
+        throw new Error("Failed to fetch user info - invalid server response");
+      }
+    } catch (err) {
+      if (err instanceof TypeError) {
+        throw new Error("Failed to fetch user info - unable to connect");
+      }
+      throw err;
+    }
+  },
+
   async getClips() {
     try {
-      const response = await fetch(`/clips`, {
+      const response = await fetch(`/api/clips`, {
         method: "GET",
         credentials: "include",
       });
@@ -96,7 +128,7 @@ export const apiClient = {
 
   async createClip(text) {
     try {
-      const response = await fetch(`/clip`, {
+      const response = await fetch(`/api/clip`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -130,7 +162,7 @@ export const apiClient = {
 
   async deleteClip(clipId) {
     try {
-      const response = await fetch(`/clip/${clipId}`, {
+      const response = await fetch(`/api/clip/${clipId}`, {
         method: "DELETE",
         credentials: "include",
       });

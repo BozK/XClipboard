@@ -13,8 +13,8 @@ export function LoginPage({ onLoginSuccess }) {
     setIsLoading(true);
 
     try {
-      const response = await apiClient.login(username, password);
-      onLoginSuccess(response.username);
+      await apiClient.login(username, password);
+      onLoginSuccess();
     } catch (err) {
       setError(err.message || "Login failed");
     } finally {
