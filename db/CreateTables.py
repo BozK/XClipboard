@@ -25,8 +25,8 @@ CREATE TABLE IF NOT EXISTS Clips (
 # Seed the 'public' user if it doesn't exist
 cursor.execute("SELECT * FROM Users WHERE username = 'public'")
 if cursor.fetchone() is None:
-    # Hash an empty password for the public user
-    empty_password_hash = bcrypt.hashpw("".encode(), bcrypt.gensalt())
+    # Hash a 1 space character password for the public user
+    empty_password_hash = bcrypt.hashpw(" ".encode(), bcrypt.gensalt())
     cursor.execute(
         "INSERT INTO Users (username, password_hash) VALUES (?, ?)",
         ("public", empty_password_hash)

@@ -27,7 +27,7 @@ export function LoginPage({ onLoginSuccess }) {
     setIsLoading(true);
 
     try {
-      await apiClient.login("public", "");
+      await apiClient.login("public", " ");
       onLoginSuccess();
     } catch (err) {
       setError(err.message || "Failed to access public clipboard");
