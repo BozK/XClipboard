@@ -1,4 +1,5 @@
 import sqlite3
+import bcrypt
 
 # Connect to SQLite database
 conn = sqlite3.connect("xclipboard.db")
@@ -20,6 +21,17 @@ CREATE TABLE IF NOT EXISTS Clips (
     FOREIGN KEY (username) REFERENCES Users(username)
 )
 """)
+
+# Seed the 'public' user if it doesn't exist
+cursor.execute("SELECT * FROM Users WHERE username = 'public'")
+if cursor.fetchone() is None:
+    # Hash an empty password for the public user
+    empty_password_hash = bcrypt.hashpw("".encode(), bcrypt.gensalt())
+    cursor.execute(
+        "INSERT INTO Users (username, password_hash) VALUES (?, ?)",
+        ("public", empty_password_hash)
+    )
+    print("Public user created")
 
 conn.commit()
 conn.close()

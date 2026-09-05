@@ -118,7 +118,7 @@ export function ClipsPage({ onLogout }) {
           XClipboard{username && ` - ${username}`}
         </h1>
         <button onClick={handleLogout} className="btn-secondary">
-          Logout
+          {username === "public" ? "Back to Login" : "Logout"}
         </button>
       </header>
 

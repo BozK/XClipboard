@@ -22,6 +22,20 @@ export function LoginPage({ onLoginSuccess }) {
     }
   };
 
+  const handlePublicClipboard = async () => {
+    setError("");
+    setIsLoading(true);
+
+    try {
+      await apiClient.login("public", "");
+      onLoginSuccess();
+    } catch (err) {
+      setError(err.message || "Failed to access public clipboard");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-xc-bg px-4">
       <div className="w-full max-w-sm">
@@ -67,6 +81,17 @@ export function LoginPage({ onLoginSuccess }) {
             {isLoading ? "Logging in..." : "Login"}
           </button>
         </form>
+
+        <div className="mt-6 text-center">
+          <p className="text-xc-brown mb-3 opacity-70">or</p>
+          <button
+            onClick={handlePublicClipboard}
+            disabled={isLoading}
+            className="btn-secondary w-full disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? "Loading..." : "Public Clipboard"}
+          </button>
+        </div>
       </div>
     </div>
   );
