@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List
 from datetime import datetime
 
@@ -17,6 +17,14 @@ class RegisterRequest(BaseModel):
     """Request body for POST /auth/register"""
     username: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)
+
+    @field_validator("password")
+    @classmethod
+    def password_fits_bcrypt(cls, v: str) -> str:
+        # bcrypt only accepts up to 72 bytes (bcrypt 5 raises instead of truncating)
+        if len(v.encode()) > 72:
+            raise ValueError("password cannot be longer than 72 bytes")
+        return v
 
 
 # ============================================================================
