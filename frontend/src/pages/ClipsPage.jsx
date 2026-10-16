@@ -131,7 +131,7 @@ export function ClipsPage({ onLogout }) {
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Paste or type your text here..."
-              className="flex-1 md:h-[480px] resize-none focus:outline-none bg-xc-fill text-xc-brown placeholder-xc-brown placeholder-opacity-60"
+              className="flex-1 md:h-[480px] resize-none focus:outline-hidden bg-xc-fill text-xc-brown placeholder-xc-brown/60"
             />
           </div>
 
@@ -168,7 +168,7 @@ export function ClipsPage({ onLogout }) {
                 clips.map((clip) => (
                   <div
                     key={clip.clip_id}
-                    className="p-2 bg-xc-bg rounded border border-xc-brown"
+                    className="p-2 bg-xc-bg rounded-sm border border-xc-brown"
                   >
                     <div className="flex justify-between items-start gap-2 mb-1">
                       <span className="text-xs text-xc-brown opacity-70">
@@ -190,13 +190,13 @@ export function ClipsPage({ onLogout }) {
                         <button
                           onClick={() => handleDeleteClip(clip.clip_id)}
                           disabled={deletingId === clip.clip_id}
-                          className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:opacity-80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="text-xs px-2 py-1 rounded-sm bg-red-600 text-white hover:opacity-80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {deletingId === clip.clip_id ? "..." : "Delete"}
                         </button>
                       </div>
                     </div>
-                    <p className="text-sm text-xc-brown break-words">
+                    <p className="text-sm text-xc-brown wrap-break-word">
                       <ClipContent text={clip.clip_text} />
                     </p>
                   </div>

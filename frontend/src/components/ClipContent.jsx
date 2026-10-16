@@ -14,7 +14,7 @@ export function ClipContent({ text, maxLength = 60 }) {
   };
 
   return (
-    <span className="break-words">
+    <span className="wrap-break-word">
       {parts.map((part, i) =>
         urlRegex.test(part) ? (
           <a
