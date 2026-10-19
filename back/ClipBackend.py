@@ -24,7 +24,7 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 # ============================================================================
 sessions = {}  # Format: {session_id_uuid: "username"}
 
-DB_PATH = Path(__file__).parent.parent / "db" / "xclipboard.db"
+DB_PATH = Path(os.getenv("DB_PATH", Path(__file__).parent.parent / "db" / "xclipboard.db"))
 
 # ============================================================================
 # Database Helpers
@@ -396,7 +396,7 @@ if __name__ == "__main__":
     logger.info("Starting XClipboard API server...")
     uvicorn.run(
         app,
-        host="127.0.0.1",
-        port=8001,
+        host=os.getenv("HOST", "127.0.0.1"),
+        port=int(os.getenv("PORT", "8001")),
         log_config=None  # Use our custom logging
     )
