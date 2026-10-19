@@ -1,8 +1,11 @@
+import os
 import sqlite3
+from pathlib import Path
 import bcrypt
 
-# Connect to SQLite database
-conn = sqlite3.connect("xclipboard.db")
+# Connect to SQLite database (same DB_PATH env var as the backend)
+DB_PATH = Path(os.getenv("DB_PATH", Path(__file__).parent / "xclipboard.db"))
+conn = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
 
 cursor.execute("""
