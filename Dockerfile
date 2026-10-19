@@ -15,9 +15,11 @@ ENV PYTHONUNBUFFERED=1 \
     PORT=8001 \
     DB_PATH=/app/data/xclipboard.db
 
-# Run as a non-root user whose UID matches the host user that owns the data folder
-ARG UID=1000
-RUN useradd --uid ${UID} --no-create-home --shell /usr/sbin/nologin app
+# Run as the app's dedicated host user (UID/GID come from APP_UID/APP_GID in .env, see DEPLOY.md)
+ARG UID
+ARG GID
+RUN groupadd --gid ${GID} app && \
+    useradd --uid ${UID} --gid ${GID} --no-create-home --shell /usr/sbin/nologin app
 
 WORKDIR /app
 COPY requirements.txt .

@@ -2,6 +2,7 @@
 #   /srv/xclipboard/app   <- this repo
 #   /srv/xclipboard/data  <- database + logs (back these up)
 #   /srv/xclipboard/.env  <- secrets/config, see .env.example
+#   /srv/xclipboard/app/.env -> ../.env (symlink, so compose can read APP_UID/APP_GID below)
 name: xclipboard
 
 services:
@@ -9,8 +10,9 @@ services:
     build:
       context: .
       args:
-        # Must match the owner of ../data (see DEPLOY.md)
-        UID: ${APP_UID:-1000}
+        # The xclipboard host user that owns ../data. No default on purpose: never fall back to your own UID
+        UID: ${APP_UID:?APP_UID missing, see DEPLOY.md}
+        GID: ${APP_GID:?APP_GID missing, see DEPLOY.md}
     restart: unless-stopped
     env_file: ../.env
     environment:
