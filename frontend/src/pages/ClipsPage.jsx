@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { apiClient } from "../api/client";
 import { ClipContent } from "../components/ClipContent";
 import { ClipFile } from "../components/ClipFile";
+import { SaveFileButton } from "../components/SaveFileButton";
+import { ImageViewer } from "../components/ImageViewer";
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024; // Matches MAX_FILE_BYTES in ClipBackend.py
 
@@ -16,6 +18,7 @@ export function ClipsPage({ onLogout }) {
   const [deletingId, setDeletingId] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [viewingClip, setViewingClip] = useState(null); // Image clip open in the viewer
   const fileInputRef = useRef(null);
   const dragDepth = useRef(0); // dragenter/leave also fire for child elements
 
@@ -150,6 +153,14 @@ export function ClipsPage({ onLogout }) {
     dragDepth.current = 0;
     setIsDragging(false);
     handleUploadFiles(e.dataTransfer.files);
+  };
+
+  const handleFileError = (message) => {
+    if (message === "Unauthorized") {
+      onLogout();
+    } else {
+      setError(message || "Failed to save file");
+    }
   };
 
   const handleCopyClip = async (clipText, clipId) => {
@@ -294,13 +305,12 @@ export function ClipsPage({ onLogout }) {
                       </span>
                       <div className="flex gap-1">
                         {clip.file ? (
-                          <a
-                            href={apiClient.fileUrl(clip.clip_id)}
-                            download={clip.file.name}
+                          <SaveFileButton
+                            clipId={clip.clip_id}
+                            file={clip.file}
+                            onError={handleFileError}
                             className="text-xs px-2 py-1 rounded bg-xc-brown text-xc-fill hover:opacity-80 transition-colors"
-                          >
-                            Download
-                          </a>
+                          />
                         ) : (
                           <button
                             onClick={() =>
@@ -326,7 +336,11 @@ export function ClipsPage({ onLogout }) {
                     </div>
                     {clip.file ? (
                       <div className="text-sm text-xc-brown">
-                        <ClipFile clipId={clip.clip_id} file={clip.file} />
+                        <ClipFile
+                          clipId={clip.clip_id}
+                          file={clip.file}
+                          onOpen={() => setViewingClip(clip)}
+                        />
                       </div>
                     ) : (
                       <p className="text-sm text-xc-brown wrap-break-word">
@@ -340,6 +354,15 @@ export function ClipsPage({ onLogout }) {
           </div>
         </div>
       </main>
+
+      {viewingClip && (
+        <ImageViewer
+          clipId={viewingClip.clip_id}
+          file={viewingClip.file}
+          onClose={() => setViewingClip(null)}
+          onError={handleFileError}
+        />
+      )}
     </div>
   );
 }
