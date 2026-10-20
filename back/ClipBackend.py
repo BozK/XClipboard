@@ -1,8 +1,12 @@
 import os
+import math
 import shutil
 import sqlite3
 import mimetypes
+import secrets
+import threading
 import uuid
+from collections import deque
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 import bcrypt
@@ -29,6 +33,71 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 # Session Management (In-Memory)
 # ============================================================================
 sessions = {}  # Format: {session_id_uuid: "username"}
+
+# ============================================================================
+# Login Rate Limiting (In-Memory)
+# ============================================================================
+# Login attempts allowed per client IP within LOGIN_WINDOW. A successful login resets the count
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW = timedelta(minutes=15)
+# Set by Cloudflare to the real visitor IP. Caddy passes it through untouched
+CLIENT_IP_HEADER = "CF-Connecting-IP"
+
+
+class LoginLimiter:
+    """
+    Per-IP login throttle: {client_ip: deque of attempt times}, oldest first.
+
+    Every attempt counts when it starts, not when it fails, so a burst of parallel
+    requests can't all slip past the check while bcrypt runs, and a blocked attempt
+    costs no bcrypt CPU. Like sessions, it lives in process memory: a restart clears it.
+
+    There's deliberately no per-account lockout: anyone could trip it and lock the real user out.
+    """
+
+    def __init__(self, max_attempts: int = LOGIN_MAX_ATTEMPTS, window: timedelta = LOGIN_WINDOW):
+        self._max_attempts = max_attempts
+        self._window = window
+        self._attempts: dict[str, deque[datetime]] = {}
+        # The login route is sync, so attempts arrive on threadpool workers
+        self._lock = threading.Lock()
+
+    def attempt(self, key: str) -> Optional[int]:
+        """
+        Count an attempt for key and return None, or, if key is out of attempts,
+        count nothing and return the whole seconds until its oldest one expires.
+        """
+        with self._lock:
+            now = datetime.now(timezone.utc)
+            self._prune(now)
+            times = self._attempts.setdefault(key, deque())
+            if len(times) >= self._max_attempts:
+                wait = (times[0] + self._window - now).total_seconds()
+                return max(1, math.ceil(wait))
+            times.append(now)
+            return None
+
+    def reset(self, key: str):
+        with self._lock:
+            self._attempts.pop(key, None)
+
+    def _prune(self, now: datetime):
+        """Drop expired attempts, and keys left with none, so the dict doesn't grow without bound"""
+        cutoff = now - self._window
+        for key in list(self._attempts):
+            times = self._attempts[key]
+            while times and times[0] <= cutoff:
+                times.popleft()
+            if not times:
+                del self._attempts[key]
+
+
+login_limiter = LoginLimiter()
+
+
+def get_client_ip(request: Request) -> str:
+    """Real visitor IP from Cloudflare's header, or the direct peer for local runs without it"""
+    return request.headers.get(CLIENT_IP_HEADER) or (request.client.host if request.client else "unknown")
 
 DB_PATH = Path(os.getenv("DB_PATH", Path(__file__).parent.parent / "db" / "xclipboard.db"))
 
@@ -114,7 +183,7 @@ async def log_requests(request: Request, call_next):
         logger,
         method=request.method,
         path=request.url.path,
-        client_ip=request.client.host if request.client else "unknown",
+        client_ip=get_client_ip(request),
         status_code=response.status_code,
         response_time_ms=process_time_ms
     )
@@ -137,8 +206,9 @@ async def get_current_user(session_id: Optional[str] = Cookie(None)) -> str:
 
 async def validate_admin_token(request: Request) -> bool:
     """Dependency to validate admin token from X-Admin-Token header"""
-    token = request.headers.get("X-Admin-Token")
-    if token != ADMIN_TOKEN:
+    token = request.headers.get("X-Admin-Token") or ""
+    # No ADMIN_TOKEN configured turns the admin endpoints off, instead of letting a missing or empty header match it
+    if not ADMIN_TOKEN or not secrets.compare_digest(token.encode(), ADMIN_TOKEN.encode()):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid or missing admin token"
@@ -261,15 +331,26 @@ api_router = APIRouter(prefix="/api")
 # -------- Authentication --------
 
 @api_router.post("/auth/login", response_model=UserMessageResponse, status_code=status.HTTP_201_CREATED)
-def login(request: LoginRequest, response: Response):
+def login(credentials: LoginRequest, request: Request, response: Response):
     """
     POST /api/auth/login
     Authenticate user and create session
     """
-    user = get_user_by_username(request.username)
-    
+    # Throttled per client IP, checked before the DB lookup and bcrypt so a blocked attempt costs nothing
+    client_ip = get_client_ip(request)
+    retry_after = login_limiter.attempt(client_ip)
+    if retry_after is not None:
+        logger.warning(f"Login rate limited for {client_ip} ({retry_after}s left)")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts",
+            headers={"Retry-After": str(retry_after)}
+        )
+
+    user = get_user_by_username(credentials.username)
+
     if not user:
-        logger.warning(f"Login attempt with non-existent username: {request.username}")
+        logger.warning(f"Login attempt with non-existent username: {credentials.username}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid username or password"
@@ -278,8 +359,8 @@ def login(request: LoginRequest, response: Response):
     # Verify password
     try:
         password_hash = user["password_hash"].encode() if isinstance(user["password_hash"], str) else user["password_hash"]
-        if not verify_password(request.password, password_hash):
-            logger.warning(f"Failed login attempt for user: {request.username}")
+        if not verify_password(credentials.password, password_hash):
+            logger.warning(f"Failed login attempt for user: {credentials.username}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid username or password"
@@ -291,9 +372,14 @@ def login(request: LoginRequest, response: Response):
             detail="Invalid username or password"
         )
     
+    # The public password is known to everyone, so its logins keep counting: otherwise looping
+    # on it would reset the count forever and spend bcrypt CPU on every request
+    if credentials.username != PUBLIC_USERNAME:
+        login_limiter.reset(client_ip)
+
     # Create session
     session_id = str(uuid.uuid4())
-    sessions[session_id] = request.username
+    sessions[session_id] = credentials.username
     
     # Set session cookie
     response.set_cookie(
@@ -305,8 +391,8 @@ def login(request: LoginRequest, response: Response):
         max_age=604800  # 7 days
     )
     
-    logger.info(f"User logged in: {request.username}")
-    return UserMessageResponse(message="Login successful", username=request.username)
+    logger.info(f"User logged in: {credentials.username}")
+    return UserMessageResponse(message="Login successful", username=credentials.username)
 
 
 @api_router.post("/auth/logout", response_model=MessageResponse, status_code=status.HTTP_200_OK)
@@ -607,7 +693,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     logger.warning(f"HTTP {exc.status_code}: {exc.detail}")
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": exc.detail}
+        content={"error": exc.detail},
+        headers=exc.headers  # Keeps Retry-After on 429s
     )
 
 

@@ -1,3 +1,11 @@
+// Login 429 copy. retryAfter is the Retry-After header, in seconds
+function tooManyAttemptsMessage(retryAfter) {
+  const seconds = Number(retryAfter);
+  if (!seconds) return "Too many attempts — wait a few minutes";
+  const minutes = Math.ceil(seconds / 60);
+  return `Too many attempts — wait ${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+}
+
 export const apiClient = {
   async login(username, password) {
     try {
@@ -9,10 +17,13 @@ export const apiClient = {
       });
 
       if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error(tooManyAttemptsMessage(response.headers.get("Retry-After")));
+        }
         let errorMessage = "Login failed";
         try {
           const errorData = await response.json();
-          errorMessage = errorData.detail || errorMessage;
+          errorMessage = errorData.error || errorData.detail || errorMessage;
         } catch (e) {
           // Response wasn't valid JSON, use fallback message
         }
