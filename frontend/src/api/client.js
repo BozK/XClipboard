@@ -160,6 +160,51 @@ export const apiClient = {
     }
   },
 
+  async uploadFile(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      // No Content-Type header: the browser sets the multipart boundary itself
+      const response = await fetch(`/api/clip/file`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error("Unauthorized");
+        }
+        let errorMessage = "Failed to upload file";
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.detail || errorMessage;
+        } catch (e) {
+          // Response wasn't valid JSON, use fallback message
+        }
+        throw new Error(errorMessage);
+      }
+      try {
+        return await response.json();
+      } catch (e) {
+        throw new Error("Failed to upload file - invalid server response");
+      }
+    } catch (err) {
+      if (err instanceof TypeError) {
+        throw new Error("Failed to upload file - unable to connect");
+      }
+      throw err;
+    }
+  },
+
+  // Plain URLs for <img>/<a>: same origin, so the session cookie is sent automatically
+  fileUrl(clipId, inline = false) {
+    return `/api/clip/${clipId}/file${inline ? "?inline=true" : ""}`;
+  },
+
+  thumbUrl(clipId) {
+    return `/api/clip/${clipId}/thumb`;
+  },
+
   async deleteClip(clipId) {
     try {
       const response = await fetch(`/api/clip/${clipId}`, {

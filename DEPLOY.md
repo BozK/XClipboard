@@ -11,6 +11,7 @@ Caddy stays on the host and reverse proxies to `localhost:8001`, same as before.
 │   └── .env -> ../.env                     <- symlink so compose can read APP_UID/APP_GID
 ├── data/                      owner: xclipboard:xclipboard, group-writable, setgid
 │   ├── db/                                 <- xclipboard.db
+│   ├── files/                              <- uploaded file clips (+ thumbs/ previews)
 │   └── logs/                               <- daily log files
 └── .env                       owner: you, mode 600
 ```
@@ -27,7 +28,7 @@ You're in the `xclipboard` group, so you can still read the DB and logs without 
 ```sh
 # App user + folders
 sudo adduser --system --group --no-create-home xclipboard
-sudo mkdir -p /srv/xclipboard/data/db /srv/xclipboard/data/logs
+sudo mkdir -p /srv/xclipboard/data/db /srv/xclipboard/data/files /srv/xclipboard/data/logs
 sudo chown $USER:$USER /srv/xclipboard
 sudo chown -R xclipboard:xclipboard /srv/xclipboard/data
 sudo chmod -R g+rwX /srv/xclipboard/data
@@ -71,6 +72,18 @@ Occasionally pick up base image security updates (new Python/Node patch releases
 docker compose build --pull && docker compose up -d
 ```
 
+### One-time upgrade: file clips
+
+The release that added file/image clips needs a new `data/files` folder and a new `ClipFiles` table.
+Run this once before (or right after) the first `./run.sh` with that code. Until it's done, the clips list fails to load.
+
+```sh
+sudo install -d -o xclipboard -g xclipboard -m 2775 /srv/xclipboard/data/files
+cd /srv/xclipboard/app && docker compose run --rm xclipboard python db/CreateTables.py
+```
+
+`CreateTables.py` only creates tables that are missing, so it's safe to rerun on an existing database.
+
 ## Day to day
 
 | Task | Command (from `app/`) |
@@ -92,4 +105,6 @@ docker compose build --pull && docker compose up -d
 
 - Keep the port published as `127.0.0.1:8001:8001`. A bare `8001:8001` exposes the app on every interface,
   and Docker-published ports bypass ufw rules.
-- Locally you can still run without Docker via `local.sh`. `HOST`, `PORT` and `DB_PATH` default to the old values.
+- Locally you can still run without Docker via `local.sh`. `HOST`, `PORT` and `DB_PATH` default to the old values,
+  and `FILES_PATH` defaults to `db/files/`.
+- Uploads are capped at 25 MB per file by the app itself. Caddy has no body size limit by default, so nothing to change there.

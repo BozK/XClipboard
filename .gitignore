@@ -57,3 +57,5 @@ logs/
 #cache stuff?
 back/__pycache__/
 *.pyc
+# Uploaded file clips (local runs)
+db/files/

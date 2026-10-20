@@ -1,19 +1,25 @@
 import os
+import shutil
 import sqlite3
+import mimetypes
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 import bcrypt
 from fastapi import FastAPI, APIRouter, Request, Response, HTTPException, Depends, status, Cookie
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.concurrency import run_in_threadpool
+from starlette.datastructures import UploadFile
+from PIL import Image, ImageOps
+from pillow_heif import register_heif_opener
 import time
 from pathlib import Path
 
 from ClipModels import (
     LoginRequest, RegisterRequest, ClipCreate,
     MessageResponse, UserMessageResponse, ClipMessageResponse,
-    ClipsResponse, ClipResponse, ErrorResponse
+    ClipsResponse, ClipResponse, ClipFileInfo, ErrorResponse
 )
 from logger import logger, log_request, log_database_query
 
@@ -27,6 +33,22 @@ sessions = {}  # Format: {session_id_uuid: "username"}
 DB_PATH = Path(os.getenv("DB_PATH", Path(__file__).parent.parent / "db" / "xclipboard.db"))
 
 # ============================================================================
+# File Storage
+# ============================================================================
+FILES_PATH = Path(os.getenv("FILES_PATH", Path(__file__).parent.parent / "db" / "files"))
+THUMBS_PATH = FILES_PATH / "thumbs"
+THUMBS_PATH.mkdir(parents=True, exist_ok=True)
+
+PUBLIC_USERNAME = "public"  # Shared account with a known password, so it stays text-only
+MAX_FILE_BYTES = 25 * 1024 * 1024
+MULTIPART_OVERHEAD_BYTES = 64 * 1024  # Slack for boundaries/part headers when pre-checking Content-Length
+THUMB_SIZE = 640  # Longest side of the preview, in pixels
+# Only real raster images may render inline on our origin; everything else is forced to download
+INLINE_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/heic", "image/heif"}
+
+register_heif_opener()  # Lets Pillow read iPhone HEIC photos
+
+# ============================================================================
 # Database Helpers
 # ============================================================================
 
@@ -35,6 +57,33 @@ def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def get_owned_clip(cursor: sqlite3.Cursor, clip_id: int, username: str) -> sqlite3.Row:
+    """Fetch a clip and its file metadata (if any). 404 if missing, 403 if it belongs to another user"""
+    query = """
+        SELECT c.clip_id, c.username, f.stored_name, f.original_name, f.mime_type, f.has_thumb
+        FROM CLIPS c
+        LEFT JOIN ClipFiles f ON f.clip_id = c.clip_id
+        WHERE c.clip_id = ?
+        """
+    cursor.execute(query, (clip_id,))
+    log_database_query(logger, query, (clip_id,))
+    clip = cursor.fetchone()
+
+    if not clip:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Clip not found"
+        )
+
+    if clip["username"] != username:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Clip belongs to another user"
+        )
+
+    return clip
 
 
 def get_user_by_username(username: str) -> Optional[sqlite3.Row]:
@@ -114,6 +163,89 @@ def hash_password(password: str) -> bytes:
 def verify_password(password: str, hashed: bytes) -> bool:
     """Verify a password against its bcrypt hash"""
     return bcrypt.checkpw(password.encode(), hashed)
+
+
+def make_thumbnail(source: Path, stored_name: str) -> Optional[str]:
+    """
+    Write a small JPEG preview to THUMBS_PATH if Pillow can decode the file as an image.
+    Returns the MIME type Pillow detected, or None if the file isn't an image.
+    """
+    try:
+        with Image.open(source) as img:
+            mime_type = Image.MIME.get(img.format, "application/octet-stream")
+            img.draft("RGB", (THUMB_SIZE * 2, THUMB_SIZE * 2))  # Fast JPEG downscale while decoding
+            # iPhone photos are stored sideways with an EXIF rotation flag
+            img = ImageOps.exif_transpose(img)
+            img.thumbnail((THUMB_SIZE, THUMB_SIZE))
+
+            if img.mode in ("RGBA", "LA", "P"):
+                # JPEG has no transparency: flatten onto white instead of black
+                img = img.convert("RGBA")
+                flattened = Image.new("RGB", img.size, "white")
+                flattened.paste(img, mask=img.getchannel("A"))
+                img = flattened
+            else:
+                img = img.convert("RGB")
+
+            img.save(THUMBS_PATH / f"{stored_name}.jpg", "JPEG", quality=80)
+        return mime_type
+    except Exception as e:
+        logger.info(f"No thumbnail for {stored_name}: {e}")
+        return None
+
+
+def delete_stored_file(stored_name: str):
+    """Remove an uploaded file and its thumbnail from disk"""
+    (FILES_PATH / stored_name).unlink(missing_ok=True)
+    (THUMBS_PATH / f"{stored_name}.jpg").unlink(missing_ok=True)
+
+
+def save_file_clip(upload: UploadFile, username: str) -> tuple[int, str]:
+    """Copy an upload to disk, build its preview and insert the clip. Returns (clip_id, created_at)"""
+    stored_name = uuid.uuid4().hex
+    # Never trust the client's filename for paths: it's only kept for display and downloads
+    original_name = Path(upload.filename).name.strip()[:255] or "file"
+
+    upload.file.seek(0)
+    with open(FILES_PATH / stored_name, "wb") as out:
+        shutil.copyfileobj(upload.file, out, 1024 * 1024)
+
+    try:
+        size_bytes = (FILES_PATH / stored_name).stat().st_size
+        detected_mime = make_thumbnail(FILES_PATH / stored_name, stored_name)
+        has_thumb = detected_mime is not None
+        mime_type = (
+            detected_mime
+            or mimetypes.guess_type(original_name)[0]
+            or upload.content_type
+            or "application/octet-stream"
+        )
+        created_at = get_current_timestamp_iso8601()
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            clip_query = "INSERT INTO CLIPS (username, clip_text, created_at) VALUES (?, '', ?)"
+            cursor.execute(clip_query, (username, created_at))
+            log_database_query(logger, clip_query, (username, created_at))
+            clip_id = cursor.lastrowid
+
+            file_query = """
+                INSERT INTO ClipFiles (clip_id, stored_name, original_name, mime_type, size_bytes, has_thumb)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """
+            file_params = (clip_id, stored_name, original_name, mime_type, size_bytes, int(has_thumb))
+            cursor.execute(file_query, file_params)
+            log_database_query(logger, file_query, file_params)
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        delete_stored_file(stored_name)
+        raise
+
+    logger.info(f"File clip saved for {username}: {original_name} ({size_bytes} bytes, {mime_type})")
+    return clip_id, created_at
 
 
 # ============================================================================
@@ -259,20 +391,32 @@ def get_clips(current_user: str = Depends(get_current_user)):
     cursor = conn.cursor()
     
     query = """
-        SELECT clip_id, clip_text, created_at
-        FROM CLIPS
-        WHERE username = ?
-        ORDER BY created_at DESC
+        SELECT c.clip_id, c.clip_text, c.created_at,
+               f.original_name, f.mime_type, f.size_bytes, f.has_thumb
+        FROM CLIPS c
+        LEFT JOIN ClipFiles f ON f.clip_id = c.clip_id
+        WHERE c.username = ?
+        ORDER BY c.created_at DESC
         LIMIT 25
         """
     cursor.execute(query, (current_user,))
     log_database_query(logger, query, (current_user,))
-    
+
     rows = cursor.fetchall()
     conn.close()
-    
+
     clips = [
-        ClipResponse(clip_id=row[0], clip_text=row[1], created_at=row[2])
+        ClipResponse(
+            clip_id=row["clip_id"],
+            clip_text=row["clip_text"],
+            created_at=row["created_at"],
+            file=ClipFileInfo(
+                name=row["original_name"],
+                mime_type=row["mime_type"],
+                size_bytes=row["size_bytes"],
+                has_thumb=bool(row["has_thumb"]),
+            ) if row["original_name"] is not None else None,
+        )
         for row in rows
     ]
     
@@ -322,33 +466,135 @@ def delete_clip(clip_id: int, current_user: str = Depends(get_current_user)):
     cursor = conn.cursor()
     
     try:
-        # Verify the clip belongs to the current user
-        select_query = "SELECT username FROM CLIPS WHERE clip_id = ?"
-        cursor.execute(select_query, (clip_id,))
-        log_database_query(logger, select_query, (clip_id,))
-        clip = cursor.fetchone()
-        
-        if not clip:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Clip not found"
-            )
-        
-        if clip["username"] != current_user:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Cannot delete clip belonging to another user"
-            )
-        
-        # Delete the clip
+        clip = get_owned_clip(cursor, clip_id, current_user)
+
+        # Delete the attachment row (if any), then the clip
+        file_delete_query = "DELETE FROM ClipFiles WHERE clip_id = ?"
+        cursor.execute(file_delete_query, (clip_id,))
+        log_database_query(logger, file_delete_query, (clip_id,))
+
         delete_query = "DELETE FROM CLIPS WHERE clip_id = ?"
         cursor.execute(delete_query, (clip_id,))
         log_database_query(logger, delete_query, (clip_id,))
         conn.commit()
     finally:
         conn.close()
-    
+
+    if clip["stored_name"]:
+        delete_stored_file(clip["stored_name"])
+
     return MessageResponse(message="Clip deleted successfully")
+
+
+# -------- File Clips --------
+
+@api_router.post("/clip/file", response_model=ClipMessageResponse, status_code=status.HTTP_201_CREATED)
+async def create_file_clip(request: Request, current_user: str = Depends(get_current_user)):
+    """
+    POST /api/clip/file
+    Save an uploaded file (multipart field "file") as a clip for the authenticated user.
+    Takes the raw Request so auth and size checks run before the body is read and spooled to disk.
+    """
+    if current_user == PUBLIC_USERNAME:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="File uploads are disabled for the public account"
+        )
+
+    too_large = HTTPException(
+        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+        detail=f"File too large (max {MAX_FILE_BYTES // (1024 * 1024)} MB)"
+    )
+    content_length = request.headers.get("content-length", "")
+    if not content_length.isdigit():
+        raise HTTPException(
+            status_code=status.HTTP_411_LENGTH_REQUIRED,
+            detail="Content-Length required"
+        )
+    if int(content_length) > MAX_FILE_BYTES + MULTIPART_OVERHEAD_BYTES:
+        raise too_large
+
+    form = await request.form(max_files=1, max_fields=1)
+    try:
+        upload = form.get("file")
+        if not isinstance(upload, UploadFile) or not upload.filename:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing file"
+            )
+        if upload.size > MAX_FILE_BYTES:
+            raise too_large
+
+        clip_id, created_at = await run_in_threadpool(save_file_clip, upload, current_user)
+    finally:
+        await form.close()
+
+    return ClipMessageResponse(
+        message="File saved",
+        clip_id=clip_id,
+        created_at=created_at
+    )
+
+
+@api_router.get("/clip/{clip_id}/file", status_code=status.HTTP_200_OK)
+def download_clip_file(clip_id: int, inline: bool = False, current_user: str = Depends(get_current_user)):
+    """
+    GET /api/clip/{clip_id}/file
+    Download a file clip at full size. ?inline=true shows images in the browser instead
+    """
+    conn = get_db_connection()
+    try:
+        clip = get_owned_clip(conn.cursor(), clip_id, current_user)
+    finally:
+        conn.close()
+
+    path = FILES_PATH / clip["stored_name"] if clip["stored_name"] else None
+    if not path or not path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+
+    # has_thumb means Pillow really decoded it as an image, so a renamed .html can't sneak through on its extension
+    can_inline = clip["has_thumb"] and clip["mime_type"] in INLINE_MIME_TYPES
+    disposition = "inline" if inline and can_inline else "attachment"
+    return FileResponse(
+        path,
+        media_type=clip["mime_type"],
+        filename=clip["original_name"],
+        content_disposition_type=disposition,
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+@api_router.get("/clip/{clip_id}/thumb", status_code=status.HTTP_200_OK)
+def get_clip_thumbnail(clip_id: int, current_user: str = Depends(get_current_user)):
+    """
+    GET /api/clip/{clip_id}/thumb
+    Small JPEG preview of an image clip
+    """
+    conn = get_db_connection()
+    try:
+        clip = get_owned_clip(conn.cursor(), clip_id, current_user)
+    finally:
+        conn.close()
+
+    path = THUMBS_PATH / f"{clip['stored_name']}.jpg" if clip["has_thumb"] else None
+    if not path or not path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thumbnail not found"
+        )
+
+    # Clip ids are never reused (AUTOINCREMENT), so a thumbnail never changes
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "private, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 # ============================================================================

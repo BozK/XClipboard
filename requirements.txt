@@ -2,3 +2,6 @@ fastapi==0.143.2
 uvicorn==0.54.0
 bcrypt==5.0.0
 pydantic==2.14.1
+python-multipart==0.0.32
+pillow==13.0.0
+pillow-heif==1.8.1

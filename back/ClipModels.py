@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 
@@ -36,11 +36,20 @@ class ClipCreate(BaseModel):
     clip_text: str = Field(..., min_length=1)
 
 
+class ClipFileInfo(BaseModel):
+    """Attachment metadata for a file clip"""
+    name: str
+    mime_type: str
+    size_bytes: int
+    has_thumb: bool
+
+
 class ClipResponse(BaseModel):
     """Single clip object returned in responses"""
     clip_id: int
     clip_text: str
     created_at: str  # ISO 8601 format
+    file: Optional[ClipFileInfo] = None  # Set for file clips, clip_text is then empty
 
 
 class ClipsResponse(BaseModel):

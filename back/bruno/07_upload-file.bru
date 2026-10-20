@@ -1,0 +1,15 @@
+meta {
+  name: Upload File Clip
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/api/clip/file
+  body: multipartForm
+  auth: none
+}
+
+body:multipart-form {
+  file: @file(bruno.json)
+}

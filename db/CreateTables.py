@@ -25,6 +25,19 @@ CREATE TABLE IF NOT EXISTS Clips (
 )
 """)
 
+# File attachments: 1:1 with a Clips row. The bytes live on disk under FILES_PATH/<stored_name>
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS ClipFiles (
+    clip_id INTEGER PRIMARY KEY,
+    stored_name TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    has_thumb INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (clip_id) REFERENCES Clips(clip_id)
+)
+""")
+
 # Seed the 'public' user if it doesn't exist
 cursor.execute("SELECT * FROM Users WHERE username = 'public'")
 if cursor.fetchone() is None:
