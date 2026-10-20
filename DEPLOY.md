@@ -107,4 +107,9 @@ cd /srv/xclipboard/app && docker compose run --rm xclipboard python db/CreateTab
   and Docker-published ports bypass ufw rules.
 - Locally you can still run without Docker via `local.sh`. `HOST`, `PORT` and `DB_PATH` default to the old values,
   and `FILES_PATH` defaults to `db/files/`.
+- Logins are rate limited per client IP by the app: 5 attempts per 15 minutes, then 429 with `Retry-After`.
+  The IP comes from Cloudflare's `CF-Connecting-IP`, which is only trustworthy while the firewall admits nothing but
+  Cloudflare, since anyone reaching the origin directly could set it. Without the header (local runs) it falls back to the
+  direct peer. A successful login clears the count, except for the public account, whose password everyone knows.
+  Counts live in memory, so a restart clears them.
 - Uploads are capped at 25 MB per file by the app itself. Caddy has no body size limit by default, so nothing to change there.
