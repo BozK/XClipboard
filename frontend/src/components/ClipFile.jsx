@@ -11,15 +11,14 @@ const formatSize = (bytes) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-export function ClipFile({ clipId, file }) {
+export function ClipFile({ clipId, file, onOpen }) {
   if (file.has_thumb) {
     return (
-      <a
-        href={apiClient.fileUrl(clipId, true)}
-        target="_blank"
-        rel="noopener noreferrer"
+      <button
+        type="button"
+        onClick={onOpen}
         title={file.name}
-        className="block"
+        className="block w-full"
       >
         {/* max-h keeps a portrait photo from filling a landscape phone screen */}
         <img
@@ -28,7 +27,7 @@ export function ClipFile({ clipId, file }) {
           loading="lazy"
           className="w-full max-h-48 object-contain rounded-sm bg-xc-fill"
         />
-      </a>
+      </button>
     );
   }
 
