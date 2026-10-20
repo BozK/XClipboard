@@ -1,6 +1,6 @@
 # Expects the server layout described in DEPLOY.md:
 #   /srv/xclipboard/app   <- this repo
-#   /srv/xclipboard/data  <- database + logs (back these up)
+#   /srv/xclipboard/data  <- database + uploaded files + logs (back these up)
 #   /srv/xclipboard/.env  <- secrets/config, see .env.example
 #   /srv/xclipboard/app/.env -> ../.env (symlink, so compose can read APP_UID/APP_GID below)
 name: xclipboard
@@ -23,6 +23,7 @@ services:
       - "127.0.0.1:8001:8001"
     volumes:
       - ../data/db:/app/data
+      - ../data/files:/app/files
       - ../data/logs:/app/logs
     logging:
       driver: json-file

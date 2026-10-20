@@ -13,7 +13,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HOST=0.0.0.0 \
     PORT=8001 \
-    DB_PATH=/app/data/xclipboard.db
+    DB_PATH=/app/data/xclipboard.db \
+    FILES_PATH=/app/files
 
 # Run as the app's dedicated host user (UID/GID come from APP_UID/APP_GID in .env, see DEPLOY.md)
 ARG UID
@@ -28,7 +29,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY back/ ./back/
 COPY db/CreateTables.py ./db/
 COPY --from=frontend /app/frontend/dist ./frontend/dist
-RUN mkdir -p data logs && chown app:app data logs
+RUN mkdir -p data files logs && chown app:app data files logs
 
 USER app
 EXPOSE 8001
